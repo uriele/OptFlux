@@ -7,6 +7,7 @@ import Flux: params, onehot, onehotbatch
 import Plots
 import Flux: _match_eltype, create_bias, _size_check
 import Flux
+
 abstract type AbstractOptLayers end
 include("utilities.jl")
 include("train.jl")
