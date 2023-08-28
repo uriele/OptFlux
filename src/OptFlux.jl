@@ -16,7 +16,7 @@ include("OptLayers.jl")
 include("activation.jl")
 export AbstractOptLayers
 export confusion_matrix,visualize_confusion_matrix
-export PolyDense, enforce_nonnegative!, MixedActivationDense
+export PolyDense, enforce_nonnegative!, MixedActivationDense,PositiveDense
 export negative_shift, ChainRulesCore 
 # Write your package code here.
 

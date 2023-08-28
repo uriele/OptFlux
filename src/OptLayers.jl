@@ -48,17 +48,18 @@ struct PolyDense{F, M<:AbstractMatrix, B}<: AbstractOptLayers
   weight::M
   bias::B
   σ::F
-  function PolyDense(W::M, bias = true, σ::F = identity) where {M<:AbstractMatrix, F}
+  positive::Bool
+  function PolyDense(W::M, bias = true, σ::F = identity;positive=false) where {M<:AbstractMatrix, F}
     @assert(size(W, 1) % 2 == 0, "out dimension has to be even")
     b = create_bias(W, bias, size(W,1))
-    new{F,M,typeof(b)}(W, b, σ)
+    new{F,M,typeof(b)}(W, b, σ,positive)
   end
 end
 
 
 function PolyDense((in, out)::Pair{<:Integer, <:Integer}, σ = identity;
-    init = glorot_uniform, bias = true)
-PolyDense(init(out, in), bias, σ)
+    init = glorot_uniform, bias = true,positive=false)
+    PolyDense(init(out, in), bias, σ; positive=positive)
 end
 
 @functor PolyDense
@@ -67,8 +68,9 @@ function (a::PolyDense)(x::AbstractVecOrMat)
 _size_check(a, x, 1 => size(a.weight, 2))
 σ = NNlib.fast_act(a.σ, x)  # replaces tanh => tanh_fast, etc
 xT = _match_eltype(a, x)  # fixes Float64 input, etc.
-weight=(a.weight)
-bias=(a.bias)
+weight=(a.positive) ? abs.(a.weight) : (a.weight)
+bias=(a.positive) ? abs.(a.bias) : (a.bias)
+
 #@info("weight: ", weight)
 #@info("bias: ", bias)
 #@info("poly:",weight[1:end÷2,:] * xT.^2 .+ bias[1:end÷2])
@@ -83,6 +85,7 @@ function Base.show(io::IO, l::PolyDense)
 print(io, "PolyDense(", size(l.weight, 2), " => ", size(l.weight, 1))
 l.σ == identity || print(io, ", ", l.σ)
 l.bias == false && print(io, "; bias=false")
+l.positive == true && print(io, ", positive=true")
 print(io, ")")
 end
 
@@ -157,4 +160,64 @@ function Base.show(io::IO, l::MixedActivationDense)
     print(io, ")      # ", nparams(l), " parameters")
 end
 
+
+"""
+    PositiveDense{F, S, T}
+
+A custom dense layer supporting mixed activation functions.
+
+# Fields
+- `weight::S`: The weight matrix.
+- `bias::T`: The bias vector.
+- `σ::F`: The activation function or vector of activation functions.
+
+# Constructors
+
+## PositiveDense(W::M, bias, σ)
+
+### Parameters
+- `W::M`: An `AbstractMatrix` for the weight matrix.
+- `bias`: The bias vector.
+- `σ`: A function or vector of functions for activation.
+
+### Example
+
+# Examples
+```jldoctest
+julia> d = PositiveDense(5 => 2, tanh)
+Dense(5 => 2, tanh)       # 12 parameters
+```
+"""
+struct PositiveDense{F, S, T}<: AbstractOptLayers
+    weight::S
+    bias::T
+    σ::F
+    
+    function PositiveDense(W::M, bias, σ::F) where {M<:AbstractMatrix, F}
+        @assert(size(W, 1) % 2 == 0, "out dimension has to be even")
+        b = create_bias(W, bias, size(W,1))
+        #σ=fill(σ,size(W,1))
+        new{F,M,typeof(b)}(W, b, σ)
+    end
+end
+
+
+function PositiveDense((in, out)::Pair{<:Integer, <:Integer}, σ = identity;
+    init = glorot_uniform, bias = true)
+    return PositiveDense(init(out, in),bias,σ)
+end
+Flux.@functor PositiveDense
+
+function (a::PositiveDense)(x)
+    W, b, σ = abs.(a.W), abs.(a.b), a.σ
+    z = W * x .+ b
+    return σ.(z)
+end
+
+function Base.show(io::IO, l::PositiveDense)
+    print(io, "PositiveDense(", size(l.weight, 2), " => ", size(l.weight, 1))
+    print(io, ", ", l.σ)
+    l.bias == false && print(io, "; bias=false")
+    print(io, ")")
+end
 
