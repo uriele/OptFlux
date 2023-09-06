@@ -1,7 +1,7 @@
 
 
 """
-    PolyDense(in => out, σ=identity; bias=true, init=glorot_uniform)
+    PolyDense(in => out, σ=identity; bias=true, init=glorot_uniform,positive=false)
     PolyDense(W::AbstractMatrix, [bias, σ])
 
 Create a polynomial fully connected layer, whose forward pass is given by:
@@ -209,7 +209,7 @@ end
 Flux.@functor PositiveDense
 
 function (a::PositiveDense)(x)
-    W, b, σ = abs.(a.W), abs.(a.b), a.σ
+    W, b, σ = abs.(a.weight), abs.(a.bias), a.σ
     z = W * x .+ b
     return σ.(z)
 end
