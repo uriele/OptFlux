@@ -1,6 +1,6 @@
 using Flux, Statistics
 using MLDatasets
-using Flux: onehotbatch, crossentropy, onecold
+
 using MLUtils 
 using Plots
 using ImageShow
@@ -10,6 +10,7 @@ using OptFlux
 σ2(x) = x   # Identity function
 σ3(x) = abs(x)  # Absolute function
 
+c=Conv((3,3),1=>1,pad=(1,1),stride=(1,1))
 
 z[1:end÷2]=W[1:end÷2,:]*x.^2+b
 z[end÷2+1:end]=W[end÷2+1:end,:]*x+b
