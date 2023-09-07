@@ -1,6 +1,11 @@
 using NNlib: conv, ∇conv_data, depthwiseconv, output_size
 using Flux: @nospecialize,_paddims,expand,conv_reshape_bias,SamePad,calc_padding,convfilter
-using Flux: DenseConvDims,conv_dims,_print_conv_opt,_channels_in,_channels_out
+using Flux: DenseConvDims,conv_dims,_print_conv_opt,_channels_in,_channels_out,∇conv_data
+
+
+function create_positive_bias(weights::AbstractArray, bias::Bool, dims::Integer...; positive_bias::Bool=false)
+    bias ? fill!(similar(weights, dims...), (positive_bias) ? 0 : -oftype(weights[1],0.5)) : false
+  end
 
 """
     PositiveConv(filter, in => out, σ = identity;
@@ -104,7 +109,7 @@ function PositiveConv(w::AbstractArray{T,N}, b = true, σ = identity;
   stride = expand(Val(N-2), stride)
   dilation = expand(Val(N-2), dilation)
   pad = calc_padding(Conv, pad, size(w)[1:N-2], dilation, stride)
-  bias = create_bias(w, b, size(w, N))
+  bias = create_positive_bias(w, b, size(w, N);positive_bias=positive_bias)
   (positive_bias) ? bias = abs.(bias) : bias = bias
   return PositiveConv(σ, abs.(w), bias, stride, pad, dilation, groups,positive_bias)
 end
@@ -184,7 +189,7 @@ function PositiveConvTranspose(w::AbstractArray{T,N}, bias = true, σ = identity
   stride = expand(Val(N-2), stride)
   dilation = expand(Val(N-2), dilation)
   pad = calc_padding(ConvTranspose, pad, size(w)[1:N-2], dilation, stride)
-  b = create_bias(w, bias, size(w, N-1) * groups)
+  b = create_positive_bias(w, bias, size(w, N-1) * groups;positive_bias=positive_bias)
 
   (positive_bias) ? b = abs.(b) : b = b
 

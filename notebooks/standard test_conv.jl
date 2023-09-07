@@ -5,10 +5,10 @@ using MLUtils
 using Plots
 using ImageShow
 using OptFlux
-using Flux: logitcrossentropy
+using Flux: logitcrossentropy,params,onehotbatch,onecold
 using Flux.Optimise: update!
 # Define custom activation functions
-σ1(x) = relu(abs(x)-0.5)  # Squaring assumes that input is already positive
+σ1(x) = relu(abs(x)-oftype(x,7.0))  # Squaring assumes that input is already positive
 
 trainset= CIFAR10(split=:train)
 testset = CIFAR10(split=:test)
@@ -21,7 +21,7 @@ label=trainset.metadata["class_names"]
 # One-hot-encode the labels
 y_test_conv = onehotbatch(y_test_conv, 0:9)
 y_train_conv = onehotbatch(y_train_conv, 0:9)
-batch = 512
+batch = 32
 train_conv_data =DataLoader((data=X_train_conv, label=y_train_conv),batchsize=batch, shuffle=true)
 test_conv_data = DataLoader((data=X_test_conv, label=y_test_conv),batchsize=batch, shuffle=true)   
 # Define a simple multi-layer perceptron (MLP)
@@ -40,47 +40,85 @@ model = Chain(
   Dense(256, 10),
   softmax
 )
+
+rand32(1)
+model_opt = Chain(
+  PositiveConv((3, 3), 3=>16, pad=(1,1), σ1,init=rand32),
+  MaxPool((2,2)),
+  PositiveConv((3, 3), 16=>32, pad=(1,1),  σ1,init=rand32),
+  MaxPool((2,2)),
+  PositiveConv((3, 3), 32=>64, pad=(1,1),  σ1,init=rand32),
+  MaxPool((2,2)),
+  flatten,
+  Dense(1024, 256, relu),
+  Dropout(0.5),
+  Dense(256, 10),
+  softmax
+)
+
 learning_rate = 0.001
 
 # Evaluation
 loss(x, y) = logitcrossentropy(model(x), y)
+function loss_opt(x, y)
+    pred = model_opt(x)
+    #println("Type of pred: ", typeof(pred))
+    #println("Type of y: ", typeof(y))
+    return logitcrossentropy(pred, y)
+end
+
+loss_opt(X_test_conv[:,:,:,1:2],y_test_conv[:,1:2])
+
+function debug_model(m, x)
+    tmp = x
+    for layer in m.layers
+        tmp = layer(tmp)
+        println("After layer ", typeof(layer), ", shape: ", size(tmp), ", type: ", eltype(tmp))
+    end
+    return tmp
+end
+
+
+debug_model(model_opt, X_test_conv[:,:,:,1:2])
+debug_model(model, X_test_conv[:,:,:,1:2])
+
+
+
+
 optimizer = ADAM(learning_rate)
 accuracy(m,x, y) = mean(onecold(m(x)) .== onecold(y))
 
-logitcrossentropy(model(X_train_conv), y_train_conv)
-
 # Training loop
-epochs = 2
+epochs = 5
 train_epoch_losses = Float64[]
 test_epoch_losses = Float64[]
 train_epoch_accuracies = Float64[]
 test_epoch_accuracies = Float64[]
-
 for epoch in 1:epochs
     println("Epoch: $epoch")
-    train_loss = 0.0
+    train_loss = 0.0f0
     train_correct = 0
     train_total = 0
 
-    for (x, y) in train_data
+    for (x, y) in train_conv_data
         # Forward and backward pass
-        grads = gradient(params(model)) do
-            l = loss(x, y)
-            train_loss += l
+        grads = gradient(params(model_opt)) do
+            l = loss_opt(x, y)
             return l
         end
-
+        l = loss_opt(x, y)
+        train_loss += l
         # Update model parameters
-        update!(optimizer, params(model), grads)
+        update!(optimizer, params(model_opt), grads)
 
         # Calculate training set accuracy
-        pred = onecold(model(x))
+        pred = onecold(model_opt(x))
         train_correct += sum(pred .== onecold(y))
         train_total += length(y)
     end
 
     # Calculate average training loss and accuracy for the epoch
-    avg_train_loss = train_loss / length(train_data)
+    avg_train_loss = train_loss / length(train_conv_data)
     train_accuracy = train_correct / train_total
 
     # Save training loss and accuracy
@@ -91,7 +129,67 @@ for epoch in 1:epochs
     test_loss = 0.0
     test_correct = 0
     test_total = 0
-    for (x, y) in test_data
+    for (x, y) in test_conv_data
+        l = loss_opt(x, y)
+        test_loss += l
+
+        pred = onecold(model_opt(x))
+        test_correct += sum(pred .== onecold(y))
+        test_total += length(y)
+    end
+
+    avg_test_loss = test_loss / length(test_conv_data)
+    test_accuracy = test_correct / test_total
+
+    # Save test loss and accuracy
+    push!(test_epoch_losses, avg_test_loss)
+    push!(test_epoch_accuracies, test_accuracy)
+
+    println("Train Loss: $avg_train_loss, Train Accuracy: $train_accuracy")
+    println("Test Loss: $avg_test_loss, Test Accuracy: $test_accuracy")
+end
+
+
+ctrain_epoch_losses = Float64[]
+ctest_epoch_losses = Float64[]
+ctrain_epoch_accuracies = Float64[]
+ctest_epoch_accuracies = Float64[]
+for epoch in 1:epochs
+    println("Epoch: $epoch")
+    train_loss = 0.0f0
+    train_correct = 0
+    train_total = 0
+
+    for (x, y) in train_conv_data
+        # Forward and backward pass
+        grads = gradient(params(model)) do
+            l = loss(x, y)
+            return l
+        end
+        l = loss(x, y)
+        train_loss += l
+        # Update model parameters
+        update!(optimizer, params(model), grads)
+
+        # Calculate training set accuracy
+        pred = onecold(model(x))
+        train_correct += sum(pred .== onecold(y))
+        train_total += length(y)
+    end
+
+    # Calculate average training loss and accuracy for the epoch
+    avg_train_loss = train_loss / length(train_conv_data)
+    train_accuracy = train_correct / train_total
+
+    # Save training loss and accuracy
+    push!(ctrain_epoch_losses, avg_train_loss)
+    push!(ctrain_epoch_accuracies, train_accuracy)
+
+    # Evaluate model performance on test set
+    test_loss = 0.0
+    test_correct = 0
+    test_total = 0
+    for (x, y) in test_conv_data
         l = loss(x, y)
         test_loss += l
 
@@ -100,12 +198,12 @@ for epoch in 1:epochs
         test_total += length(y)
     end
 
-    avg_test_loss = test_loss / length(test_data)
+    avg_test_loss = test_loss / length(test_conv_data)
     test_accuracy = test_correct / test_total
 
     # Save test loss and accuracy
-    push!(test_epoch_losses, avg_test_loss)
-    push!(test_epoch_accuracies, test_accuracy)
+    push!(ctest_epoch_losses, avg_test_loss)
+    push!(ctest_epoch_accuracies, test_accuracy)
 
     println("Train Loss: $avg_train_loss, Train Accuracy: $train_accuracy")
     println("Test Loss: $avg_test_loss, Test Accuracy: $test_accuracy")

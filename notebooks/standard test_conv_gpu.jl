@@ -25,7 +25,7 @@ y_train_conv = onehotbatch(y_train_conv, 0:9) |> gpu
 y_test_conv = onehotbatch(y_test_conv, 0:9) |> gpu
 
 # Create DataLoader
-batch = 512
+batch = 6
 train_conv_data = DataLoader((data=X_train_conv, label=y_train_conv), batchsize=batch, shuffle=true)
 test_conv_data = DataLoader((data=X_test_conv, label=y_test_conv), batchsize=batch, shuffle=true)
 
