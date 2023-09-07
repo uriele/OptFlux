@@ -12,30 +12,33 @@ using Flux.Optimise: update!
 
 trainset= CIFAR10(split=:train)
 testset = CIFAR10(split=:test)
+trainset= FashionMNIST(split=:train)
+testset = FashionMNIST(split=:test)
 X_train,y_train_conv = trainset[:]
 X_test,y_test_conv = testset[:]
 X_train_conv=deepcopy(X_train)
 X_test_conv=deepcopy(X_test) # |>gpu
-
+X_train_conv=reshape(X_train_conv,28,28,1,:)
+X_test_conv=reshape(X_test_conv,28,28,1,:)
 label=trainset.metadata["class_names"]
 # One-hot-encode the labels
 y_test_conv = onehotbatch(y_test_conv, 0:9)
 y_train_conv = onehotbatch(y_train_conv, 0:9)
-batch = 32
+batch = 128
 train_conv_data =DataLoader((data=X_train_conv, label=y_train_conv),batchsize=batch, shuffle=true)
 test_conv_data = DataLoader((data=X_test_conv, label=y_test_conv),batchsize=batch, shuffle=true)   
 # Define a simple multi-layer perceptron (MLP)
 
 #model_linear=deepcopy(model)
 model = Chain(
-  Conv((3, 3), 3=>16, pad=(1,1), relu),
+  Conv((3, 3), 1=>16, pad=(1,1), relu),
   MaxPool((2,2)),
   Conv((3, 3), 16=>32, pad=(1,1), relu),
   MaxPool((2,2)),
   Conv((3, 3), 32=>64, pad=(1,1), relu),
   MaxPool((2,2)),
   flatten,
-  Dense(1024, 256, relu),
+  Dense(576, 256, relu),
   Dropout(0.5),
   Dense(256, 10),
   softmax
@@ -43,20 +46,20 @@ model = Chain(
 
 rand32(1)
 model_opt = Chain(
-  PositiveConv((3, 3), 3=>16, pad=(1,1), σ1,init=rand32),
+  PositiveConv((3, 3), 1=>16, pad=(1,1), σ1,init=rand32),
   MaxPool((2,2)),
   PositiveConv((3, 3), 16=>32, pad=(1,1),  σ1,init=rand32),
   MaxPool((2,2)),
   PositiveConv((3, 3), 32=>64, pad=(1,1),  σ1,init=rand32),
   MaxPool((2,2)),
   flatten,
-  Dense(1024, 256, relu),
+  Dense(576, 256, relu),
   Dropout(0.5),
   Dense(256, 10),
   softmax
 )
 
-learning_rate = 0.001
+learning_rate = 0.01
 
 # Evaluation
 loss(x, y) = logitcrossentropy(model(x), y)
@@ -83,19 +86,32 @@ debug_model(model_opt, X_test_conv[:,:,:,1:2])
 debug_model(model, X_test_conv[:,:,:,1:2])
 
 
-
+accuracy(model,X_test_conv[:,:,:,1:5000],y_test_conv[:,1:5000])
+accuracy(model_opt,X_test_conv[:,:,:,1:5000],y_test_conv[:,1:5000])
 
 optimizer = ADAM(learning_rate)
 accuracy(m,x, y) = mean(onecold(m(x)) .== onecold(y))
-
+# Learning Rate Scheduling
+function lr_schedule(epoch)
+    if epoch < 10
+        return 0.001
+    elseif epoch < 20
+        return 0.0005
+    else
+        return 0.0001
+    end
+end
 # Training loop
-epochs = 5
+epochs = 10
 train_epoch_losses = Float64[]
 test_epoch_losses = Float64[]
 train_epoch_accuracies = Float64[]
 test_epoch_accuracies = Float64[]
 for epoch in 1:epochs
     println("Epoch: $epoch")
+    global opt
+    opt = Flux.Optimiser(ADAM(lr_schedule(epoch)), WeightDecay(0.0005))
+    
     train_loss = 0.0f0
     train_correct = 0
     train_total = 0
@@ -109,7 +125,7 @@ for epoch in 1:epochs
         l = loss_opt(x, y)
         train_loss += l
         # Update model parameters
-        update!(optimizer, params(model_opt), grads)
+        Flux.update!(opt, params(model_opt), grads)
 
         # Calculate training set accuracy
         pred = onecold(model_opt(x))
@@ -156,6 +172,9 @@ ctrain_epoch_accuracies = Float64[]
 ctest_epoch_accuracies = Float64[]
 for epoch in 1:epochs
     println("Epoch: $epoch")
+    global opt
+    opt = Flux.Optimiser(ADAM(lr_schedule(epoch)), WeightDecay(0.0005))
+    
     train_loss = 0.0f0
     train_correct = 0
     train_total = 0
@@ -169,7 +188,7 @@ for epoch in 1:epochs
         l = loss(x, y)
         train_loss += l
         # Update model parameters
-        update!(optimizer, params(model), grads)
+        Flux.update!(opt, params(model), grads)
 
         # Calculate training set accuracy
         pred = onecold(model(x))
@@ -229,14 +248,10 @@ sum(onecold(model(X_train)) .== onecold(y_train))
 println("Training accuracy: $train_accuracy")
 println("Test accuracy: $test_accuracy")
 
-
+X_train=X_train_conv
+y_train=y_train_conv
 mm_nl=create_confusion_matrix(model,X_train,y_train)
-mm_l=create_confusion_matrix(model_linear,X_train,y_train)
-mm_a=create_confusion_matrix(model_abs,X_train,y_train)
-mm_t=create_confusion_matrix(model_tianwei,X_train,y_train)
-mm_p2=create_confusion_matrix(model_p2,X_train,y_train)
-mm_t0=create_confusion_matrix(model_tianwei0,X_train,y_train)
-mm_2=create_confusion_matrix(model_2,X_train,y_train)
+mm_l=create_confusion_matrix(model_opt,X_train,y_train)
 
 mm_nl=mm_nl./sum(y_train,dims=2).*100
 mm_l=mm_l./sum(y_train,dims=2).*100
