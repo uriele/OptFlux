@@ -8,7 +8,7 @@ using OptFlux
 using Flux: logitcrossentropy,params,onehotbatch,onecold
 using Flux.Optimise: update!
 # Define custom activation functions
-σ1(x) = relu(abs(x)-oftype(x,7.0))  # Squaring assumes that input is already positive
+σ1(x) = relu(abs(x)-oftype(x,0.5))  # Squaring assumes that input is already positive
 
 trainset= CIFAR10(split=:train)
 testset = CIFAR10(split=:test)
@@ -31,43 +31,38 @@ test_conv_data = DataLoader((data=X_test_conv, label=y_test_conv),batchsize=batc
 
 #model_linear=deepcopy(model)
 model = Chain(
-  Conv((3, 3), 1=>16, pad=(1,1), relu),
-  MaxPool((2,2)),
-  Conv((3, 3), 16=>32, pad=(1,1), relu),
-  MaxPool((2,2)),
-  Conv((3, 3), 32=>64, pad=(1,1), relu),
-  MaxPool((2,2)),
-  flatten,
-  Dense(576, 256, relu),
-  Dropout(0.5),
-  Dense(256, 10),
-  softmax
+    Conv((3, 3), 1=>16, relu),
+    MaxPool((2,2)),
+    Conv((3, 3), 16=>32, relu),
+    MaxPool((2,2)),
+    Conv((3, 3), 32=>32, relu),
+    MaxPool((2,2)),
+    flatten,
+    Dense(32, 10),
+    softmax
 )
-
 rand32(1)
 model_opt = Chain(
-  PositiveConv((3, 3), 1=>16, pad=(1,1), σ1,init=rand32),
+  PositiveConv((3, 3), 1=>16,  init=rand32),
   MaxPool((2,2)),
-  PositiveConv((3, 3), 16=>32, pad=(1,1),  σ1,init=rand32),
+  PositiveConv((3, 3), 16=>32,  σ1,init=rand32),
   MaxPool((2,2)),
-  PositiveConv((3, 3), 32=>64, pad=(1,1),  σ1,init=rand32),
+  PositiveConv((3, 3), 32=>32,  σ1,init=rand32),
   MaxPool((2,2)),
   flatten,
-  Dense(576, 256, relu),
-  Dropout(0.5),
-  Dense(256, 10),
+  Dense(32, 10),
   softmax
 )
 
 learning_rate = 0.01
 
 # Evaluation
-loss(x, y) = logitcrossentropy(model(x), y)
+loss(x, y) = crossentropy(model(x), y)
 function loss_opt(x, y)
     pred = model_opt(x)
     #println("Type of pred: ", typeof(pred))
     #println("Type of y: ", typeof(y))
-    return logitcrossentropy(pred, y)
+    return crossentropy(pred, y)
 end
 
 loss_opt(X_test_conv[:,:,:,1:2],y_test_conv[:,1:2])
